@@ -3,7 +3,7 @@ name: Kane AI Test Run on HyperExecute Orchestrator
 on:
   workflow_dispatch:
   push:
-    branches: [ main ]
+    branches: [ master ]
 
 jobs:
   kane_ai_execution:
@@ -16,8 +16,8 @@ jobs:
       LT_ACCESS_KEY: ${{ secrets.LT_ACCESS_KEY }}
       LT_PROJECT_ID: ${{ secrets.LT_PROJECT_ID }}
       TMA_BASE64_AUTH: ${{ secrets.TMA_BASE64_AUTH }}
-      TARGET_TITLE: ${{ vars.TARGET_TITLE || 'Change Notification Settings' }}
-      TARGET_ENV_NAMES: ${{ vars.TARGET_ENV_NAMES || 'MacOS_Chrome,demo556' }}
+      TARGET_TITLE: ${{ secrets.TARGET_TITLE}}
+      TARGET_ENV_NAMES: ${{ secrets.TARGET_ENV_NAMES }}
 
     steps:
       - name: Checkout Code

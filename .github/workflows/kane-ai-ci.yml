@@ -1,0 +1,91 @@
+name: Kane AI Test Run on HyperExecute Orchestrator
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+
+jobs:
+  kane_ai_execution:
+    runs-on: ubuntu-latest
+    container: node:20-alpine
+    
+    env:
+      # Map GitHub Secrets to Environment Variables
+      LT_USERNAME: ${{ secrets.LT_USERNAME }}
+      LT_ACCESS_KEY: ${{ secrets.LT_ACCESS_KEY }}
+      LT_PROJECT_ID: ${{ secrets.LT_PROJECT_ID }}
+      TMA_BASE64_AUTH: ${{ secrets.TMA_BASE64_AUTH }}
+      TARGET_TITLE: ${{ vars.TARGET_TITLE || 'Change Notification Settings' }}
+      TARGET_ENV_NAMES: ${{ vars.TARGET_ENV_NAMES || 'MacOS_Chrome,demo556' }}
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Install System Dependencies
+        run: |
+          apk add --no-cache curl jq
+
+      - name: Install Node Dependencies
+        run: |
+          npm install axios
+
+      - name: Run Node Orchestrator
+        run: |
+          echo "Starting Kane AI Orchestration..."
+          node flow.js
+
+      - name: Verify Job ID Capture
+        run: |
+          if [ ! -f kane_job.env ]; then
+            echo "ERROR: kane_job.env was not created by flow.js"
+            exit 1
+          fi
+          # Source the file to print the ID (GitHub doesn't auto-load .env files like this)
+          source kane_job.env
+          echo "Orchestrator returned Job ID: $KANE_JOB_ID"
+          
+          # Pass the ID to the next step using GITHUB_ENV
+          echo "KANE_JOB_ID=$KANE_JOB_ID" >> $GITHUB_ENV
+
+      - name: Polling Logic
+        run: |
+          # Now we can use the env var set in the previous step
+          echo "Checking status for Job ID: ${{ env.KANE_JOB_ID }}"
+          
+          MAX_RETRIES=40
+          COUNT=0
+          SLEEP_TIME=30
+          
+          while [ $COUNT -lt $MAX_RETRIES ]; do
+            sleep $SLEEP_TIME
+            
+            # Poll the status
+            response=$(curl -s --location "https://api.hyperexecute.cloud/v2.0/job/${{ env.KANE_JOB_ID }}" \
+              -H "Authorization: Basic ${{ env.TMA_BASE64_AUTH }}")
+            
+            # Extract Status
+            status=$(echo "$response" | jq -r '.data.status // .status')
+            echo "[Attempt $((COUNT+1))/$MAX_RETRIES] Current status: $status"
+            
+            if [ "$status" == "completed" ] || [ "$status" == "passed" ]; then
+              echo ">>> Tests passed successfully!"
+              exit 0
+            elif [ "$status" == "failed" ] || [ "$status" == "error" ] || [ "$status" == "cancelled" ]; then
+              echo "xxx Tests $status. Exiting with error."
+              exit 1
+            fi
+            
+            COUNT=$((COUNT+1))
+          done
+          
+          echo "Timed out waiting for tests to complete."
+          exit 1
+
+      - name: Upload Artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kane-job-env
+          path: kane_job.env
